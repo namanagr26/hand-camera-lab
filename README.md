@@ -13,7 +13,8 @@ Webcam apps controlled by your hands, running right in the browser. Hand trackin
 Each app is a single HTML file with no build step.
 
 - **Locally:** open the `.html` file in Chrome or Edge and allow camera access.
-- **Online:** enable GitHub Pages (Settings → Pages → Deploy from branch → `main` / root), then open `https://namanagr26.github.io/<repo-name>/reality-lens.html`. Camera access requires HTTPS, which GitHub Pages provides.
+- **Online:** enable GitHub Pages (Settings → Pages → Deploy from branch → `main` / root), then open `https://namanagr26.github.io/hand-camera-lab
+  /reality-lens.html`. Camera access requires HTTPS, which GitHub Pages provides.
 
 An internet connection is needed on first load (libraries and the hand model come from CDNs).
 
