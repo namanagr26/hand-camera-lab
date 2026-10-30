@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Finger Gym — 2‑minute hand break</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+  :root { --a:#5dffc1; --b:#5db8ff; --bg:#06080d; --card:rgba(12,16,26,.72); --mut:#8b95b3; }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  html,body { height:100%; background:var(--bg); color:#eef2ff; font-family:'Space Grotesk',system-ui,sans-serif; overflow:hidden; }
+  video,#fx { position:fixed; inset:0; width:100%; height:100%; object-fit:cover; transform:scaleX(-1); }
+  video { filter:brightness(.45) saturate(.6) contrast(1.05); }
+  .screen { position:fixed; inset:0; z-index:10; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; gap:20px; padding:28px;
+    background:radial-gradient(circle at 50% 35%, #0f2a2a 0%, #06080d 65%); }
+  .hidden { display:none !important; }
+  h1 { font-size:clamp(40px,7vw,76px); line-height:1; letter-spacing:-.03em; }
+  h1 span { background:linear-gradient(120deg,var(--a),var(--b)); -webkit-background-clip:text; background-clip:text; color:transparent; }
+  .sub { color:var(--mut); max-width:520px; line-height:1.55; font-size:17px; }
+  .btn { border:0; padding:15px 34px; font:700 18px 'Space Grotesk',sans-serif; border-radius:14px; cursor:pointer; color:#04110c;
+    background:linear-gradient(120deg,var(--a),var(--b)); box-shadow:0 0 34px rgba(93,255,193,.35); transition:transform .15s; }
+  .btn:hover { transform:translateY(-2px); } .btn:disabled { opacity:.6; cursor:wait; transform:none; }
+  .btn.ghost { background:rgba(255,255,255,.07); color:#dfe6ff; box-shadow:none; }
+  .chips { display:flex; gap:10px; flex-wrap:wrap; justify-content:center; }
+  .chip { padding:8px 14px; border-radius:999px; background:rgba(255,255,255,.06); font-size:14px; color:#c8d1ef; }
+  .streak { font-size:15px; color:var(--a); }
+  #err { color:#ff8fa0; max-width:460px; }
+
+  /* HUD */
+  #hud { position:fixed; inset:0; z-index:5; pointer-events:none; }
+  #steps { position:absolute; top:22px; left:50%; transform:translateX(-50%); display:flex; gap:8px; }
+  #steps i { width:38px; height:6px; border-radius:6px; background:rgba(255,255,255,.15); transition:.3s; }
+  #steps i.done { background:var(--a); } #steps i.cur { background:var(--b); box-shadow:0 0 12px var(--b); }
+  #card { position:absolute; left:28px; top:50%; transform:translateY(-50%); width:min(340px, 42vw); padding:26px; border-radius:22px;
+    background:var(--card); backdrop-filter:blur(14px); border:1px solid rgba(255,255,255,.07); }
+  #card .k { font-size:12px; letter-spacing:.18em; text-transform:uppercase; color:var(--mut); }
+  #card h2 { font-size:28px; margin:6px 0 10px; letter-spacing:-.02em; }
+  #card p { color:#b8c2e0; line-height:1.5; font-size:15px; }
+  #why { margin-top:14px; font-size:13px !important; color:var(--mut) !important; border-left:2px solid var(--a); padding-left:10px; }
+  #big { position:absolute; right:40px; top:50%; transform:translateY(-50%); width:220px; height:220px; }
+  #big svg { width:100%; height:100%; transform:rotate(-90deg); }
+  #big .num { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; }
+  #big .num b { font-size:64px; line-height:1; } #big .num small { color:var(--mut); font-size:14px; margin-top:4px; }
+  #target { position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); font-size:min(34vw,300px); font-weight:700; opacity:.16; line-height:1; transition:.2s; }
+  #toast { position:absolute; bottom:40px; left:50%; transform:translateX(-50%) scale(.9); opacity:0; padding:12px 22px; border-radius:999px;
+    background:var(--a); color:#04110c; font-weight:700; font-size:18px; transition:.25s; }
+  #toast.show { opacity:1; transform:translateX(-50%) scale(1); }
+  #nohand { position:absolute; bottom:40px; left:50%; transform:translateX(-50%); padding:10px 18px; border-radius:999px; background:rgba(255,120,140,.18); color:#ffb3c0; font-size:15px; }
+  #skip { position:absolute; top:16px; right:18px; pointer-events:auto; padding:8px 14px; font-size:14px; }
+  @media (max-width:760px){ #card{ left:12px; right:12px; width:auto; top:auto; bottom:14px; transform:none; padding:18px } #big{ right:50%; transform:translate(50%,-50%) scale(.75); top:34% } #card h2{font-size:22px} #why{display:none} }
+
+  /* Summary */
+  .stats { display:grid; grid-template-columns:repeat(3,minmax(110px,1fr)); gap:12px; margin:6px 0; }
+  .stat { background:rgba(255,255,255,.05); border-radius:16px; padding:16px 18px; }
+  .stat b { display:block; font-size:30px; } .stat small { color:var(--mut); font-size:13px; }
+  table { border-collapse:collapse; font-size:15px; min-width:320px; }
+  td { padding:7px 14px; border-bottom:1px solid rgba(255,255,255,.06); text-align:left; } td:last-child { text-align:right; color:var(--a); }
+  #nextBreak { color:var(--mut); font-size:14px; }
+</style>
+</head>
+<body>
+<video id="cam" playsinline muted></video>
+<canvas id="fx"></canvas>
+
+<div id="hud" class="hidden">
+  <div id="steps"></div>
+  <div id="card"><div class="k" id="kicker"></div><h2 id="title"></h2><p id="instr"></p><p id="why"></p></div>
+  <div id="target"></div>
+  <div id="big">
+    <svg viewBox="0 0 120 120"><circle cx="60" cy="60" r="52" fill="none" stroke="rgba(255,255,255,.08)" stroke-width="9"/>
+      <circle id="ring" cx="60" cy="60" r="52" fill="none" stroke="url(#gr)" stroke-width="9" stroke-linecap="round" stroke-dasharray="326.7" stroke-dashoffset="326.7" style="transition:stroke-dashoffset .25s"/>
+      <defs><linearGradient id="gr"><stop offset="0" stop-color="#5dffc1"/><stop offset="1" stop-color="#5db8ff"/></linearGradient></defs></svg>
+    <div class="num"><b id="count">0</b><small id="countSub"></small></div>
+  </div>
+  <div id="toast"></div>
+  <div id="nohand" class="hidden">👋 Hold your hand up so the camera can see it</div>
+  <button id="skip" class="btn ghost">Skip ›</button>
+</div>
+
+<div id="intro" class="screen">
+  <h1>Finger <span>Gym</span></h1>
+  <p class="sub">A 2-minute break for hands that type, scroll and game all day. Your camera is the coach: it watches your fingers, counts your reps and checks your form. Nothing gets uploaded and no video leaves your computer.</p>
+  <div class="chips"><span class="chip">✊ Fist pumps</span><span class="chip">👌 Finger taps</span><span class="chip">🖐️ Spread & hold</span><span class="chip">🔢 Reflex count</span></div>
+  <div class="streak" id="streakLine"></div>
+  <button class="btn" id="go">Start my break</button>
+  <p id="err"></p>
+</div>
+
+<div id="done" class="screen hidden">
+  <h1>Hands: <span>refreshed</span></h1>
+  <div class="stats">
+    <div class="stat"><b id="sTime">0s</b><small>session time</small></div>
+    <div class="stat"><b id="sReact">–</b><small>avg reflex</small></div>
+    <div class="stat"><b id="sStreak">1🔥</b><small>day streak</small></div>
+  </div>
+  <table id="sTable"></table>
+  <div style="display:flex;gap:10px;flex-wrap:wrap;justify-content:center">
+    <button class="btn" id="again">Go again</button>
+    <button class="btn ghost" id="remind">Remind me in 45 min</button>
+  </div>
+  <div id="nextBreak"></div>
+</div>
+
+<script type="module">
+import { FilesetResolver, HandLandmarker } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/vision_bundle.mjs";
+
+const $ = id => document.getElementById(id);
+const video = $('cam'), canvas = $('fx'), ctx = canvas.getContext('2d');
+
+// ---------- geometry ----------
+let W, H, sx = 1, sy = 1, ox = 0, oy = 0;
+function resize() {
+  const dpr = Math.min(devicePixelRatio || 1, 2); W = innerWidth; H = innerHeight;
+  canvas.width = W * dpr; canvas.height = H * dpr; ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const vw = video.videoWidth || 1280, vh = video.videoHeight || 720, s = Math.max(W / vw, H / vh);
+  sx = vw * s; sy = vh * s; ox = (W - sx) / 2; oy = (H - sy) / 2;
+}
+addEventListener('resize', resize);
+const P = l => ({ x: ox + l.x * sx, y: oy + l.y * sy });
+const d = (a, b) => Math.hypot(a.x - b.x, a.y - b.y, (a.z || 0) - (b.z || 0));
+const BONES = [[0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],[5,9],[9,10],[10,11],[11,12],[9,13],[13,14],[14,15],[15,16],[13,17],[17,18],[18,19],[19,20],[0,17]];
+
+// ---------- hand reading (normalised landmarks, scale-invariant) ----------
+function read(lm) {
+  const palm = d(lm[0], lm[9]);
+  const ext = [8, 12, 16, 20].map(t => d(lm[t], lm[0]) > d(lm[t - 2], lm[0]) * 1.12);
+  const thumbOut = d(lm[4], lm[17]) > d(lm[3], lm[17]) * 1.05 && d(lm[4], lm[5]) > palm * 0.45;
+  const count = ext.filter(Boolean).length + (thumbOut ? 1 : 0);
+  const fist = ext.every(e => !e);
+  const open = ext.every(Boolean) && thumbOut;
+  const spread = open && d(lm[8], lm[20]) > palm * 1.25 && d(lm[4], lm[8]) > palm * 0.9;
+  // which fingertip is touching the thumb (1=index..4=pinky)
+  const taps = [8, 12, 16, 20].map(t => d(lm[4], lm[t]) / palm);
+  const m = Math.min(...taps), tap = m < 0.28 ? taps.indexOf(m) + 1 : 0;
+  return { count, fist, open, spread, tap, palm };
+}
+// debounce: a value must hold for N frames to count
+function stable(n = 4) { let v = null, c = 0, out = null; return x => { if (x === v) c++; else { v = x; c = 1; } if (c >= n) out = v; return out; }; }
+
+// ---------- audio ----------
+let ac;
+function beep(f = 660, dur = .09, type = 'sine', vol = .15) {
+  try { ac ||= new AudioContext(); const o = ac.createOscillator(), g = ac.createGain();
+    o.type = type; o.frequency.value = f; g.gain.setValueAtTime(vol, ac.currentTime); g.gain.exponentialRampToValueAtTime(.001, ac.currentTime + dur);
+    o.connect(g).connect(ac.destination); o.start(); o.stop(ac.currentTime + dur); } catch {}
+}
+const chord = () => [523, 659, 784, 1047].forEach((f, i) => setTimeout(() => beep(f, .25, 'triangle', .12), i * 90));
+
+// ---------- UI helpers ----------
+let toastT;
+function toast(msg) { const t = $('toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('show'), 900); }
+function setRing(frac, big, sub) { $('ring').style.strokeDashoffset = 326.7 * (1 - Math.max(0, Math.min(1, frac))); $('count').textContent = big; $('countSub').textContent = sub; }
+const burst = [];
+function pop(x, y, hue = 155) { for (let i = 0; i < 26; i++) { const a = Math.random() * 6.28, v = 2 + Math.random() * 5; burst.push({ x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, l: 1, h: hue + Math.random() * 60 }); } }
+
+// ---------- exercises ----------
+// each: {key, title, instr, why, start(), update(hand, now) -> true when finished, result()}
+const EX = [
+  {
+    key: 'Fist pumps', title: 'Fist pumps', goal: 10,
+    instr: 'Squeeze a tight fist ✊, then open your hand all the way 🖐️. That\'s one rep.',
+    why: 'Gets blood moving through tendons that stay half-curled while you type.',
+    start() { this.n = 0; this.phase = 'open'; this.s = stable(3); this.t0 = performance.now(); },
+    update(h) {
+      const st = this.s(h.fist ? 'fist' : h.open ? 'open' : 'mid');
+      if (this.phase === 'open' && st === 'fist') { this.phase = 'fist'; beep(440); }
+      else if (this.phase === 'fist' && st === 'open') { this.phase = 'open'; this.n++; beep(660 + this.n * 20); pop(h.c.x, h.c.y); if (this.n % 5 === 0 && this.n < this.goal) toast(this.n + ' down 💪'); }
+      setRing(this.n / this.goal, this.n, `of ${this.goal} · ${this.phase === 'fist' ? 'now OPEN' : 'now SQUEEZE'}`);
+      return this.n >= this.goal;
+    },
+    result() { return `${this.goal} reps · ${((performance.now() - this.t0) / 1000).toFixed(0)}s`; }
+  },
+  {
+    key: 'Finger taps', title: 'Thumb-to-finger taps', goal: 3,
+    instr: 'Touch your thumb to each fingertip in order: index → middle → ring → pinky. Do it 3 times.',
+    why: 'Trains fine motor control and wakes up the small muscles in your hand.',
+    start() { this.round = 0; this.next = 1; this.s = stable(3); this.last = 0; this.miss = 0; },
+    update(h) {
+      const t = this.s(h.tap);
+      if (t && t !== this.last) {
+        if (t === this.next) { beep(520 + this.next * 90); pop(h.tips[this.next].x, h.tips[this.next].y, 190 + this.next * 30);
+          this.next++; if (this.next > 4) { this.next = 1; this.round++; if (this.round < this.goal) toast('Round ' + this.round + ' ✓'); } }
+        else if (t !== this.next - 1) { this.miss++; beep(180, .12, 'square', .06); }
+      }
+      this.last = t;
+      h.highlight = this.next;
+      const names = ['', 'index', 'middle', 'ring', 'pinky'];
+      setRing((this.round * 4 + this.next - 1) / (this.goal * 4), `${this.round}/${this.goal}`, `tap ${names[this.next]}`);
+      return this.round >= this.goal;
+    },
+    result() { return `${this.goal * 4} taps · ${this.miss} slip${this.miss === 1 ? '' : 's'}`; }
+  },
+  {
+    key: 'Spread & hold', title: 'Spread & hold', goal: 3, hold: 4000,
+    instr: 'Spread your fingers as wide as they go and hold for 4 seconds. Relax, then repeat. 3 holds total.',
+    why: 'Stretches the muscles between your fingers, which tighten up from mouse grip.',
+    start() { this.n = 0; this.since = 0; this.relaxed = true; this.best = 0; },
+    update(h, now) {
+      if (h.spread && this.relaxed) { this.since ||= now; const f = (now - this.since) / this.hold;
+        if (Math.floor(f * 4) > Math.floor(((now - 16) - this.since) / this.hold * 4)) beep(500 + f * 300, .05);
+        if (f >= 1) { this.n++; this.relaxed = false; this.since = 0; chord(); pop(h.c.x, h.c.y, 120); toast(this.n < this.goal ? 'Now relax…' : 'Nice!'); }
+        setRing(f, Math.ceil((1 - f) * this.hold / 1000), `hold ${this.n + 1} of ${this.goal}`);
+      } else {
+        this.since = 0; if (!h.spread && !h.open) this.relaxed = true;
+        setRing(this.n / this.goal, this.n, this.relaxed ? `of ${this.goal} · spread wide!` : 'relax your hand');
+      }
+      return this.n >= this.goal;
+    },
+    result() { return `${this.goal} × ${this.hold / 1000}s holds`; }
+  },
+  {
+    key: 'Reflex count', title: 'Reflex count', goal: 8,
+    instr: 'A number appears behind you. Show that many fingers as fast as you can.',
+    why: 'Wakes your brain up as well as your hands. Your average reaction time is logged.',
+    start() { this.n = 0; this.times = []; this.pick(); this.s = stable(4); },
+    pick() { let t; do t = 1 + Math.floor(Math.random() * 5); while (t === this.target); this.target = t; this.shown = performance.now() + 350; $('target').textContent = t; $('target').style.opacity = .16; },
+    update(h, now) {
+      const c = this.s(h.count);
+      if (now > this.shown && c === this.target) {
+        this.times.push(now - this.shown); this.n++; beep(700 + this.n * 40); pop(h.c.x, h.c.y, 40);
+        $('target').style.opacity = .5; toast(((now - this.shown) / 1000).toFixed(2) + 's ⚡');
+        if (this.n < this.goal) this.pick();
+      }
+      setRing(this.n / this.goal, this.target, `show ${this.target} finger${this.target > 1 ? 's' : ''}`);
+      return this.n >= this.goal;
+    },
+    end() { $('target').textContent = ''; },
+    avg() { return this.times.reduce((a, b) => a + b, 0) / (this.times.length || 1) / 1000; },
+    result() { return `avg ${this.avg().toFixed(2)}s · best ${(Math.min(...this.times) / 1000).toFixed(2)}s`; }
+  },
+];
+
+// ---------- session flow ----------
+let idx = -1, running = false, sessionStart = 0, landmarker, lastT = -1, hands = [], pause = 0;
+const results = [];
+function startEx(i) {
+  idx = i; const e = EX[i];
+  $('steps').innerHTML = EX.map((_, k) => `<i class="${k < i ? 'done' : k === i ? 'cur' : ''}"></i>`).join('');
+  $('kicker').textContent = `Exercise ${i + 1} of ${EX.length}`; $('title').textContent = e.title; $('instr').textContent = e.instr; $('why').textContent = e.why;
+  e.start();
+}
+function finishEx() {
+  const e = EX[idx]; e.end?.(); results[idx] = [e.key, e.result()]; chord();
+  if (idx + 1 < EX.length) { toast('✓ ' + e.title); pause = performance.now() + 1300; startEx(idx + 1); }
+  else endSession();
+}
+$('skip').onclick = () => { const e = EX[idx]; e.end?.(); results[idx] = [e.key, 'skipped']; idx + 1 < EX.length ? startEx(idx + 1) : endSession(); };
+
+// streak in localStorage (optional)
+function store(k, v) { try { if (v === undefined) return JSON.parse(localStorage.getItem(k)); localStorage.setItem(k, JSON.stringify(v)); } catch { return null; } }
+const today = () => new Date().toDateString();
+function streakNow() { const s = store('fg-streak') || { n: 0, day: '' }; const y = new Date(Date.now() - 864e5).toDateString(); return s.day === today() || s.day === y ? s.n : 0; }
+function bumpStreak() { const s = store('fg-streak') || { n: 0, day: '' }; if (s.day === today()) return s.n; const n = streakNow() + 1; store('fg-streak', { n, day: today() }); return n; }
+(() => { const n = streakNow(); $('streakLine').textContent = n ? `🔥 ${n}-day streak, keep it going` : ''; })();
+
+function endSession() {
+  running = false; $('hud').classList.add('hidden'); $('done').classList.remove('hidden');
+  $('sTime').textContent = Math.round((performance.now() - sessionStart) / 1000) + 's';
+  const rx = EX[3].times.length ? EX[3].avg().toFixed(2) + 's' : '–'; $('sReact').textContent = rx;
+  $('sStreak').textContent = bumpStreak() + '🔥';
+  $('sTable').innerHTML = results.map(([k, v]) => `<tr><td>${k}</td><td>${v}</td></tr>`).join('');
+  const best = store('fg-best'); if (EX[3].times.length && (!best || EX[3].avg() < best)) { store('fg-best', EX[3].avg()); if (best) $('sReact').textContent += ' 🏆'; }
+}
+function begin() { results.length = 0; $('done').classList.add('hidden'); $('hud').classList.remove('hidden'); sessionStart = performance.now(); running = true; startEx(0); }
+$('again').onclick = begin;
+let remindT;
+$('remind').onclick = () => {
+  clearTimeout(remindT); const at = new Date(Date.now() + 45 * 60e3);
+  $('nextBreak').textContent = `⏰ I'll chime at ${at.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} (keep this tab open).`;
+  try { Notification?.requestPermission?.(); } catch {}
+  remindT = setTimeout(() => { chord(); setTimeout(chord, 600); document.title = '🖐️ Hand break time!';
+    try { new Notification('Finger Gym', { body: 'Time for a 2-minute hand break 🖐️' }); } catch {}
+    $('nextBreak').textContent = '🖐️ Break time! Hit "Go again".'; }, 45 * 60e3);
+};
+
+// ---------- render loop ----------
+function loop(now) {
+  requestAnimationFrame(loop);
+  if (video.readyState >= 2 && video.currentTime !== lastT) { lastT = video.currentTime; hands = landmarker.detectForVideo(video, now).landmarks || []; }
+  ctx.clearRect(0, 0, W, H);
+  const lm = hands[0];
+  $('nohand').classList.toggle('hidden', !!lm || !running);
+  if (lm) {
+    const pts = lm.map(P), h = read(lm);
+    h.c = pts[9]; h.tips = [pts[4], pts[8], pts[12], pts[16], pts[20]];
+    if (running && now > pause && EX[idx].update(h, now)) finishEx();
+    // skeleton
+    const good = h.fist || h.spread || h.tap;
+    const hue = good ? 155 : 205;
+    ctx.lineCap = 'round';
+    for (const [w, l, b] of [[9, 55, 24], [2.5, 88, 0]]) {
+      ctx.strokeStyle = `hsl(${hue},100%,${l}%)`; ctx.lineWidth = w; ctx.shadowColor = `hsl(${hue},100%,60%)`; ctx.shadowBlur = b;
+      ctx.beginPath(); for (const [i, j] of BONES) { ctx.moveTo(pts[i].x, pts[i].y); ctx.lineTo(pts[j].x, pts[j].y); } ctx.stroke();
+    }
+    ctx.shadowBlur = 0;
+    pts.forEach((p, i) => { ctx.fillStyle = [4, 8, 12, 16, 20].includes(i) ? '#fff' : `hsl(${hue},100%,75%)`; ctx.beginPath(); ctx.arc(p.x, p.y, [4, 8, 12, 16, 20].includes(i) ? 6 : 3.5, 0, 6.28); ctx.fill(); });
+    // target fingertip for tap exercise
+    if (running && idx === 1 && h.highlight) {
+      const p = h.tips[h.highlight], r = 18 + Math.sin(now / 150) * 5;
+      ctx.strokeStyle = '#5db8ff'; ctx.lineWidth = 3; ctx.shadowColor = '#5db8ff'; ctx.shadowBlur = 20;
+      ctx.beginPath(); ctx.arc(p.x, p.y, r, 0, 6.28); ctx.stroke(); ctx.shadowBlur = 0;
+      ctx.setLineDash([4, 6]); ctx.strokeStyle = 'rgba(255,255,255,.5)'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(h.tips[0].x, h.tips[0].y); ctx.lineTo(p.x, p.y); ctx.stroke(); ctx.setLineDash([]);
+    }
+    // spread hold arc
+    if (running && idx === 2 && EX[2].since) {
+      const f = Math.min(1, (now - EX[2].since) / EX[2].hold), r = h.palm * sy * 1.9;
+      ctx.strokeStyle = '#5dffc1'; ctx.lineWidth = 6; ctx.shadowColor = '#5dffc1'; ctx.shadowBlur = 20;
+      ctx.beginPath(); ctx.arc(pts[9].x, pts[9].y, r, -Math.PI / 2, -Math.PI / 2 + f * 6.28); ctx.stroke(); ctx.shadowBlur = 0;
+    }
+  }
+  for (let i = burst.length - 1; i >= 0; i--) { const p = burst[i]; p.x += p.vx; p.y += p.vy; p.vx *= .94; p.vy *= .94; p.l -= .025;
+    if (p.l <= 0) { burst.splice(i, 1); continue; } ctx.fillStyle = `hsla(${p.h},100%,65%,${p.l})`; ctx.beginPath(); ctx.arc(p.x, p.y, 4 * p.l, 0, 6.28); ctx.fill(); }
+}
+
+$('go').onclick = async () => {
+  const btn = $('go'); btn.disabled = true; btn.textContent = 'Warming up the coach…'; $('err').textContent = '';
+  try {
+    beep(1, .01, 'sine', .001); // unlock audio on click
+    const stream = await navigator.mediaDevices.getUserMedia({ video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' }, audio: false });
+    video.srcObject = stream; await video.play();
+    const fs = await FilesetResolver.forVisionTasks('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm');
+    const opt = delegate => ({ baseOptions: { modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task', delegate }, runningMode: 'VIDEO', numHands: 1 });
+    try { landmarker = await HandLandmarker.createFromOptions(fs, opt('GPU')); } catch { landmarker = await HandLandmarker.createFromOptions(fs, opt('CPU')); }
+    resize(); $('intro').classList.add('hidden'); requestAnimationFrame(loop); begin();
+  } catch (e) {
+    console.error(e); btn.disabled = false; btn.textContent = 'Try again';
+    $('err').textContent = e.name === 'NotAllowedError' ? 'Camera access was blocked. Allow it in your browser\'s address bar and try again.' : 'Couldn\'t start: ' + (e.message || e);
+  }
+};
+</script>
+</body>
+</html>

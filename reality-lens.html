@@ -1,0 +1,604 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1">
+<title>Reality Lens</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; background: #000; color: #e9f2ff; font-family: 'Space Grotesk', system-ui, sans-serif; overflow: hidden; }
+  #wrap { position: fixed; inset: 0; overflow: hidden; }
+  #box { position: absolute; }
+  #box > * { position: absolute; inset: 0; width: 100%; height: 100%; }
+  video { transform: scaleX(-1); filter: brightness(.68) saturate(.85); object-fit: fill; }
+  #gl { z-index: 10; pointer-events: none; }
+  #ov { z-index: 20; pointer-events: none; }
+
+  .panel { position: fixed; z-index: 30; background: rgba(6,10,18,.62); backdrop-filter: blur(12px); border: 1px solid rgba(255,255,255,.08); border-radius: 16px; }
+  #guide { top: 16px; left: 16px; padding: 14px 16px; font: 12.5px/1.75 'JetBrains Mono', monospace; color: #b9c6e4; }
+  #guide b { color: #fff; font-weight: 700; }
+  #guide .t { font: 700 11px 'JetBrains Mono', monospace; letter-spacing: .2em; color: #6f7fa6; margin-bottom: 4px; }
+  #bar { left: 50%; bottom: 18px; transform: translateX(-50%); display: flex; gap: 5px; padding: 7px; flex-wrap: wrap; justify-content: center; width: max-content; max-width: min(920px, calc(100vw - 24px)); }
+  #bar button { border: 0; cursor: pointer; padding: 8px 11px; border-radius: 11px; background: rgba(255,255,255,.05); color: #c9d4f0; font: 700 12px 'JetBrains Mono', monospace; letter-spacing: .06em; transition: .15s; }
+  #bar button:hover { background: rgba(255,255,255,.13); }
+  #bar button.on { color: #04070d; background: var(--acc); box-shadow: 0 0 18px var(--acc); }
+  #bar .snap { background: #fff; color: #000; }
+  .hideui .panel { opacity: 0; pointer-events: none; }
+  #thumb { position: fixed; right: 18px; bottom: 86px; z-index: 31; width: 220px; border-radius: 12px; border: 2px solid #fff; box-shadow: 0 10px 40px rgba(0,0,0,.6); transform: translateY(20px) scale(.9); opacity: 0; transition: .35s; pointer-events: none; }
+  #thumb.show { transform: none; opacity: 1; }
+
+  #start { position: fixed; inset: 0; z-index: 50; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 22px; text-align: center; padding: 24px;
+    background: radial-gradient(ellipse at 50% 40%, #0a2340 0%, #000 70%); }
+  #start h1 { font-size: clamp(44px, 8vw, 96px); letter-spacing: -.04em; line-height: .95; }
+  #start h1 span { background: linear-gradient(100deg, #00e5ff, #ff3fa4 40%, #ffb020 70%, #3dff7a); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  #start p { max-width: 540px; color: #93a2c6; line-height: 1.55; font-size: 17px; }
+  .moves { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; max-width: 720px; width: 100%; }
+  .moves div { background: rgba(255,255,255,.05); border-radius: 14px; padding: 14px; font-size: 14px; color: #c3cee9; }
+  .moves div b { display: block; font-size: 26px; margin-bottom: 4px; }
+  #go { border: 0; cursor: pointer; padding: 16px 38px; border-radius: 14px; font: 700 18px 'Space Grotesk', sans-serif; color: #000;
+    background: linear-gradient(100deg, #00e5ff, #8affc1); box-shadow: 0 0 40px rgba(0,229,255,.45); }
+  #go:disabled { opacity: .6; cursor: wait; }
+  #err { color: #ff8da4; max-width: 480px; }
+</style>
+</head>
+<body>
+<div id="wrap"><div id="box">
+  <video id="cam" playsinline muted></video>
+  <canvas id="gl"></canvas>
+  <canvas id="ov"></canvas>
+</div></div>
+
+<div id="guide" class="panel">
+  <div class="t">GESTURES</div>
+  🙌 <b>two hands</b> &nbsp;open a portal<br>
+  🤏🤏 <b>pinch both</b> &nbsp;scanner bar<br>
+  👌 <b>one hand</b> &nbsp;&nbsp;magnifier lens<br>
+  ✌️ <b>peace sign</b> next effect<br>
+  👍 <b>hold thumb</b> 3-2-1 photo<br>
+  <span style="color:#6f7fa6">keys: 1–9, 0 · space/← → · S · H</span>
+</div>
+<div id="bar" class="panel"></div>
+<img id="thumb" alt="">
+
+<div id="start">
+  <h1>REALITY <span>LENS</span></h1>
+  <p>Hold a window open between your hands and see the world through it in 16 different ways: X-ray, thermal, ASCII, hologram, kaleidoscope, pop art and more. All the rendering happens on your GPU, live.</p>
+  <div class="moves">
+    <div><b>🙌</b>Two hands open a portal</div>
+    <div><b>👌</b>One hand makes a lens</div>
+    <div><b>✌️</b>Peace sign switches effect</div>
+    <div><b>👍</b>Thumbs-up takes a photo</div>
+  </div>
+  <button id="go">Open the lens</button>
+  <p id="err"></p>
+</div>
+
+<script type="module">
+import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.183.2/build/three.module.js';
+import { FilesetResolver, HandLandmarker } from 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.34/vision_bundle.mjs';
+
+const MP = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.34/wasm';
+const MODEL = 'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task';
+const $ = id => document.getElementById(id);
+
+const EFFECTS = [
+  { name: 'X-RAY',        tag: 'BONE DENSITY SCAN', acc: [0.0, 0.9, 1.0] },
+  { name: 'PARTICLES',    tag: 'PARTICLE FIELD',    acc: [1.0, 0.25, 0.65] },
+  { name: 'THERMAL',      tag: 'HEAT SIGNATURE',    acc: [1.0, 0.55, 0.1] },
+  { name: 'BLUEPRINT',    tag: 'SCHEMATIC VIEW',    acc: [0.55, 0.82, 1.0] },
+  { name: 'MATRIX',       tag: 'DIGITAL RAIN',      acc: [0.2, 1.0, 0.45] },
+  { name: 'GLITCH',       tag: 'SIGNAL CORRUPTED',  acc: [1.0, 0.2, 0.4] },
+  { name: 'NIGHT VISION', tag: 'GEN-3 NVG',         acc: [0.6, 1.0, 0.3] },
+  { name: 'COMIC',        tag: 'HALFTONE PRESS',    acc: [1.0, 0.85, 0.15] },
+  { name: 'ASCII',        tag: 'TEXT MODE 80x25',   acc: [0.4, 1.0, 0.7] },
+  { name: 'KALEIDO',      tag: '8-FOLD SYMMETRY',   acc: [0.85, 0.4, 1.0] },
+  { name: 'HOLOGRAM',     tag: 'PROJECTION UNSTABLE', acc: [0.3, 0.8, 1.0] },
+  { name: '8-BIT',        tag: 'DMG-01 PALETTE',    acc: [0.6, 0.74, 0.06] },
+  { name: 'LIQUID',       tag: 'REFRACTION FIELD',  acc: [0.3, 0.9, 1.0] },
+  { name: 'NEON EDGES',   tag: 'SPECTRUM CONTOUR',  acc: [1.0, 0.3, 0.9] },
+  { name: 'POP ART',      tag: '4-UP SILKSCREEN',   acc: [1.0, 0.2, 0.55] },
+  { name: 'SKETCH',       tag: 'GRAPHITE 2B',       acc: [0.95, 0.93, 0.85] },
+];
+const css = a => `rgb(${a.map(v => Math.round(v * 255)).join(',')})`;
+
+// ---------------------------------------------------------------- shaders
+const vert = `
+varying vec2 vUv;
+void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }`;
+
+const frag = `
+precision highp float;
+varying vec2 vUv;
+uniform sampler2D tDiffuse;
+uniform sampler2D tAscii;
+uniform vec2 uExt;
+uniform vec2 uRes;      // container size, px
+uniform vec2 uVid;      // video size, px
+uniform float uTime;
+uniform float uShape;   // 1 quad, 2 circle
+uniform vec2 uQ0, uQ1, uQ2, uQ3;
+uniform vec3 uCirc;
+uniform float uPresence;
+uniform float uPrev, uCur, uMix;
+uniform vec3 uAccPrev, uAccCur;
+uniform vec2 uCenter;
+uniform float uMaxR;
+uniform vec2 uBox;
+
+float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+vec2 toUV(vec2 px) { return vec2(1.0 - px.x / uRes.x, 1.0 - px.y / uRes.y); }
+float lum(vec2 uv) { return dot(texture2D(tDiffuse, uv).rgb, vec3(0.299, 0.587, 0.114)); }
+float sobel(vec2 uv, float s) {
+  vec2 o = s / uVid;
+  float tl = lum(uv + o * vec2(-1., 1.)), t = lum(uv + o * vec2(0., 1.)), tr = lum(uv + o * vec2(1., 1.));
+  float l  = lum(uv + o * vec2(-1., 0.)),                                 r  = lum(uv + o * vec2(1., 0.));
+  float bl = lum(uv + o * vec2(-1., -1.)), b = lum(uv + o * vec2(0., -1.)), br = lum(uv + o * vec2(1., -1.));
+  float gx = -tl - 2. * l - bl + tr + 2. * r + br;
+  float gy = -tl - 2. * t - tr + bl + 2. * b + br;
+  return sqrt(gx * gx + gy * gy);
+}
+
+vec3 fx(float id, vec2 uv, vec2 p) {
+  float b = lum(uv);
+  if (id < 0.5) {                                   // X-RAY
+    float face = smoothstep(0.25, 0.75, b);
+    vec3 col = mix(vec3(0.42, 0.66, 0.95), vec3(0.02, 0.07, 0.22), face);
+    col += vec3(0.0, 0.9, 1.0) * sobel(uv, 1.5) * 2.0;
+    col += (hash(p + fract(uTime * 100.0) * 97.0) - 0.5) * 0.1;
+    col -= sin(p.y * 1.6) * 0.05;
+    return col;
+  }
+  if (id < 1.5) {                                   // PARTICLES
+    float c = fract(b * 12.0 - uTime * 0.5);
+    vec3 col = vec3(0.05, 0.3, 0.9) * 1.5 * 0.55 * smoothstep(0.0, 0.05, c) * (1.0 - smoothstep(0.05, 0.12, c));
+    float cs = uRes.y / 70.0;
+    vec2 cell = floor(p / cs);
+    vec2 cuv = toUV((cell + 0.5) * cs);
+    float cb = lum(cuv), ce = sobel(cuv, 2.0);
+    vec2 f = fract(p / cs) - 0.5;
+    float sq = step(max(abs(f.x), abs(f.y)), 0.3);
+    float h = hash(cell);
+    float strobe = step(0.3, fract(uTime * 4.0 + h * 7.0));
+    float k = mod(floor(uTime * 15.0 + h * 3.0), 3.0);
+    vec3 pc = k < 0.5 ? vec3(1.0, 0.2, 0.6) : (k < 1.5 ? vec3(1.0, 0.9, 0.2) : vec3(1.0));
+    float amt = clamp(smoothstep(0.35, 0.8, cb) * 0.7 + smoothstep(0.08, 0.3, ce), 0.0, 1.0);
+    amt *= step(h * 0.85, amt);
+    col += pc * sq * amt * strobe;
+    col += vec3(0.1, 0.3, 0.9) * smoothstep(0.2, 0.8, b) * 0.6;
+    return col + vec3(0.0, 0.0, 0.03);
+  }
+  if (id < 2.5) {                                   // THERMAL
+    vec2 o = 3.0 / uVid;
+    float t = (b + lum(uv + vec2(o.x, 0.)) + lum(uv - vec2(o.x, 0.)) + lum(uv + vec2(0., o.y)) + lum(uv - vec2(0., o.y))) / 5.0;
+    t = clamp(t * 1.2 + 0.04 * sin(uTime * 2.0 + p.y * 0.03), 0.0, 1.0);
+    vec3 col = mix(vec3(0.0, 0.0, 0.15), vec3(0.45, 0.0, 0.6), smoothstep(0.0, 0.25, t));
+    col = mix(col, vec3(0.95, 0.05, 0.1), smoothstep(0.25, 0.5, t));
+    col = mix(col, vec3(1.0, 0.6, 0.0), smoothstep(0.5, 0.75, t));
+    col = mix(col, vec3(1.0, 1.0, 0.85), smoothstep(0.75, 1.0, t));
+    return col + sobel(uv, 1.0) * 0.25;
+  }
+  if (id < 3.5) {                                   // BLUEPRINT
+    vec3 col = vec3(0.03, 0.17, 0.45);
+    vec2 g = fract(p / 28.0) * 28.0; vec2 gd = min(g, 28.0 - g);
+    col += vec3(0.25, 0.45, 0.85) * (1.0 - smoothstep(0.0, 1.2, min(gd.x, gd.y))) * 0.35;
+    vec2 g2 = fract(p / 7.0) * 7.0; vec2 gd2 = min(g2, 7.0 - g2);
+    col += vec3(0.2, 0.4, 0.8) * (1.0 - smoothstep(0.0, 0.8, min(gd2.x, gd2.y))) * 0.08;
+    float hatch = step(0.6, fract((p.x + p.y) / 6.0));
+    col += vec3(0.15, 0.3, 0.65) * hatch * (1.0 - smoothstep(0.2, 0.5, b)) * 0.4;
+    col = mix(col, vec3(0.9, 0.97, 1.0), smoothstep(0.12, 0.4, sobel(uv, 1.2)));
+    return col;
+  }
+  if (id < 4.5) {                                   // MATRIX
+    float cs = 13.0;
+    vec2 cell = floor(p / cs);
+    float cb = lum(toUV((cell + 0.5) * cs));
+    float rows = uRes.y / cs;
+    float speed = 0.25 + hash(vec2(cell.x, 1.0)) * 0.5;
+    float head = fract(uTime * speed + hash(vec2(cell.x, 7.0)));
+    float trail = fract(head - cell.y / rows);
+    float tr = exp(-trail * 9.0);
+    vec2 sub = floor(fract(p / cs) * vec2(3.0, 5.0));
+    vec2 fr = fract(p / cs);
+    float inside = step(0.12, fr.x) * step(fr.x, 0.88) * step(0.08, fr.y) * step(fr.y, 0.92);
+    float g = step(0.45, hash(sub + cell * 7.13 + floor(uTime * (2.0 + 6.0 * hash(cell))))) * inside;
+    float inten = (smoothstep(0.15, 0.8, cb) * 0.85 + tr) * g;
+    vec3 col = vec3(0.1, 1.0, 0.35) * inten;
+    col += vec3(0.8, 1.0, 0.85) * g * step(trail, 0.015);
+    return col;
+  }
+  if (id < 5.5) {                                   // GLITCH
+    float row = floor(p.y / (uRes.y / 26.0));
+    float tt = floor(uTime * 11.0);
+    vec2 u2 = uv;
+    if (hash(vec2(row, tt)) > 0.72) u2.x += (hash(vec2(row, tt + 1.0)) - 0.5) * 0.12;
+    float s = 0.005 + 0.012 * step(0.85, hash(vec2(tt, 3.0)));
+    vec3 col = vec3(texture2D(tDiffuse, u2 + vec2(s, 0.)).r, texture2D(tDiffuse, u2).g, texture2D(tDiffuse, u2 - vec2(s, 0.)).b);
+    col *= 0.85 + 0.15 * sin(p.y * 1.3);
+    if (hash(vec2(row * 3.0, tt)) > 0.95) col = 1.0 - col;
+    col = mix(col, col * vec3(1.2, 0.35, 0.9) * 1.5, 0.25);
+    return col;
+  }
+  if (id < 6.5) {                                   // NIGHT VISION
+    vec3 col = vec3(0.25, 1.0, 0.3) * (b * 1.8 + 0.06);
+    col += (hash(p + fract(uTime * 60.0) * 31.0) - 0.5) * 0.28;
+    col *= 0.9 + 0.1 * sin(p.y * 0.9 + uTime * 25.0);
+    col += vec3(0.4, 1.0, 0.5) * smoothstep(0.72, 1.0, b) * 0.7;
+    return col;
+  }
+  if (id < 7.5) {                                   // COMIC
+    vec3 c = texture2D(tDiffuse, uv).rgb;
+    c = floor(c * 4.0 + 0.5) / 4.0;
+    float m = dot(c, vec3(0.333));
+    c = mix(vec3(m), c, 1.6);
+    vec2 gp = fract(p / 7.0) - 0.5;
+    c *= 1.0 - step(length(gp), (1.0 - b) * 0.55) * 0.45;
+    c *= 1.0 - smoothstep(0.2, 0.42, sobel(uv, 1.0));
+    return c;
+  }
+  if (id < 8.5) {                                   // ASCII
+    float cs = 11.0;
+    vec2 cell = floor(p / cs), fr = fract(p / cs);
+    vec2 cuv = toUV((cell + 0.5) * cs);
+    vec3 cc = texture2D(tDiffuse, cuv).rgb;
+    float lv = floor(clamp(pow(lum(cuv), 0.85) * 1.15, 0.0, 0.999) * 10.0);
+    float g = texture2D(tAscii, vec2((lv + fr.x) / 10.0, 1.0 - fr.y)).r;
+    return mix(vec3(0.4, 1.0, 0.7), cc * 1.6 + 0.15, 0.6) * g;
+  }
+  if (id < 9.5) {                                   // KALEIDOSCOPE
+    vec2 q = p - uCenter;
+    float r = length(q), seg = 6.28318 / 8.0;
+    float an = mod(atan(q.y, q.x) + uTime * 0.35, seg);
+    an = abs(an - seg * 0.5);
+    vec2 sp = uCenter + vec2(cos(an), sin(an)) * r * (0.8 + 0.1 * sin(uTime));
+    vec3 c = texture2D(tDiffuse, toUV(sp)).rgb;
+    c = mix(c, c.gbr, 0.5 + 0.5 * sin(r * 0.025 - uTime * 2.0));
+    return c * 1.35;
+  }
+  if (id < 10.5) {                                  // HOLOGRAM
+    vec2 u2 = uv + vec2((hash(vec2(floor(p.y / 6.0), floor(uTime * 15.0))) - 0.5) * 0.006 * step(0.9, hash(vec2(floor(uTime * 7.0), 2.0))), 0.0);
+    float hb = lum(u2), e = sobel(u2, 1.2);
+    vec3 col = vec3(0.2, 0.7, 1.0) * (hb * 0.75 + e * 1.6);
+    col *= 0.72 + 0.28 * sin(p.y * 0.6 - uTime * 12.0);
+    col += vec3(0.3, 0.8, 1.0) * step(0.93, fract(p.y / 90.0 - uTime * 0.5)) * 0.25;
+    col *= 0.85 + 0.15 * hash(vec2(floor(uTime * 24.0), 1.0));
+    return col + vec3(0.0, 0.05, 0.1);
+  }
+  if (id < 11.5) {                                  // 8-BIT
+    float cs = 8.0;
+    vec2 cell = floor(p / cs), fr = fract(p / cs);
+    float l = lum(toUV((cell + 0.5) * cs));
+    float bay = mod(cell.x, 2.0) * 0.5 + mod(cell.y, 2.0) * 0.25 + mod(cell.x + cell.y, 2.0) * 0.125;
+    float lv = floor(clamp(l * 1.2 + (bay - 0.4) * 0.3, 0.0, 0.999) * 4.0);
+    vec3 col = lv < 0.5 ? vec3(0.06, 0.22, 0.06) : lv < 1.5 ? vec3(0.19, 0.38, 0.19) : lv < 2.5 ? vec3(0.55, 0.67, 0.06) : vec3(0.61, 0.74, 0.06);
+    return col * (0.82 + 0.18 * step(0.12, fr.x) * step(0.12, fr.y));
+  }
+  if (id < 12.5) {                                  // LIQUID
+    float dcc = length(p - uCenter);
+    vec2 off = vec2(sin(p.y * 0.035 + uTime * 2.0), cos(p.x * 0.04 + uTime * 1.7)) * 7.0
+             + normalize(p - uCenter + 1e-4) * sin(dcc * 0.07 - uTime * 6.0) * 5.0;
+    vec3 c = texture2D(tDiffuse, toUV(p + off)).rgb;
+    c = mix(c, c * vec3(0.5, 0.95, 1.2), 0.55);
+    float ca = abs(sin(p.x * 0.045 + sin(p.y * 0.04 + uTime)) * sin(p.y * 0.05 + cos(p.x * 0.03 - uTime * 1.3)));
+    return c + vec3(0.6, 0.95, 1.0) * pow(ca, 6.0) * 0.6;
+  }
+  if (id < 13.5) {                                  // NEON EDGES
+    float e = sobel(uv, 1.0);
+    vec3 hue = clamp(abs(mod(fract(p.x * 0.0015 + p.y * 0.001 - uTime * 0.25) * 6.0 + vec3(0.0, 4.0, 2.0), 6.0) - 3.0) - 1.0, 0.0, 1.0);
+    return hue * smoothstep(0.07, 0.3, e) * 1.8 + hue * b * 0.06;
+  }
+  if (id < 14.5) {                                  // POP ART (2x2 Warhol grid)
+    vec2 s = vec2(p.x > uCenter.x ? 1.0 : -1.0, p.y > uCenter.y ? 1.0 : -1.0);
+    vec2 qc = uCenter + s * uExt * 0.5;
+    vec2 sp = uCenter + (p - qc) * 2.0;
+    float l = lum(toUV(sp));
+    float k = (s.x > 0.0 ? 1.0 : 0.0) + (s.y > 0.0 ? 2.0 : 0.0);
+    vec3 a, m, h;
+    if (k < 0.5)      { a = vec3(0.1, 0.05, 0.4); m = vec3(1.0, 0.2, 0.55); h = vec3(1.0, 0.9, 0.2); }
+    else if (k < 1.5) { a = vec3(0.0, 0.25, 0.35); m = vec3(1.0, 0.5, 0.0); h = vec3(0.6, 1.0, 0.9); }
+    else if (k < 2.5) { a = vec3(0.3, 0.0, 0.2); m = vec3(0.1, 0.8, 0.5); h = vec3(1.0, 0.95, 0.85); }
+    else              { a = vec3(0.05, 0.1, 0.3); m = vec3(0.95, 0.15, 0.15); h = vec3(0.4, 0.85, 1.0); }
+    vec3 col = l < 0.33 ? a : (l < 0.6 ? m : h);
+    vec2 sep = abs(p - uCenter);
+    return col * step(2.5, min(sep.x, sep.y));
+  }
+  // PENCIL SKETCH
+  float e = sobel(uv, 1.1);
+  vec3 paper = vec3(0.96, 0.94, 0.88) - hash(floor(p / 2.0)) * 0.05;
+  float h1 = smoothstep(0.55, 1.0, sin((p.x + p.y) * 0.9 + hash(vec2(floor(p.y / 40.0), 0.0)) * 3.0)) * (1.0 - smoothstep(0.25, 0.55, b));
+  float h2 = smoothstep(0.55, 1.0, sin((p.x - p.y) * 0.9)) * (1.0 - smoothstep(0.1, 0.32, b));
+  return paper * (1.0 - smoothstep(0.08, 0.35, e) * 0.85) * (1.0 - h1 * 0.35) * (1.0 - h2 * 0.35);
+}
+
+float edgeD(vec2 p, vec2 a, vec2 b, float sg) { vec2 e = b - a; return dot(p - a, sg * normalize(vec2(-e.y, e.x) + 1e-6)); }
+float shapeD(vec2 p) {
+  if (uShape > 1.5) return uCirc.z - length(p - uCirc.xy);
+  float area = (uQ0.x * uQ1.y - uQ1.x * uQ0.y) + (uQ1.x * uQ2.y - uQ2.x * uQ1.y) + (uQ2.x * uQ3.y - uQ3.x * uQ2.y) + (uQ3.x * uQ0.y - uQ0.x * uQ3.y);
+  float sg = area >= 0.0 ? 1.0 : -1.0;
+  return min(min(edgeD(p, uQ0, uQ1, sg), edgeD(p, uQ1, uQ2, sg)), min(edgeD(p, uQ2, uQ3, sg), edgeD(p, uQ3, uQ0, sg)));
+}
+
+void main() {
+  vec2 p = vec2(vUv.x * uRes.x, (1.0 - vUv.y) * uRes.y);
+  float d = shapeD(p);
+  if (uPresence < 0.002 || d < -45.0) { gl_FragColor = vec4(0.0); return; }
+  float mask = smoothstep(0.0, 2.0, d) * uPresence;
+  float glow = exp(-abs(d) / 6.0) * uPresence;
+
+  // transition: radial wipe + shockwave from the window centre
+  float dc = length(p - uCenter);
+  float wr = uMix * uMaxR;
+  float ring = exp(-pow((dc - wr) / 16.0, 2.0)) * (1.0 - uMix);
+  vec2 dir = normalize(p - uCenter + 1e-4);
+  vec2 uv = toUV(p) - vec2(-dir.x, dir.y) / uRes * ring * 14.0;
+  float w = uMix >= 1.0 ? 1.0 : 1.0 - smoothstep(wr - 20.0, wr, dc);
+
+  vec3 col = fx(uCur, uv, p);
+  if (w < 1.0) col = mix(fx(uPrev, uv, p), col, w);
+  vec3 acc = mix(uAccPrev, uAccCur, w);
+  col += acc * ring * 1.6;
+
+  // sweeping scan line
+  float sy = mix(uBox.x, uBox.y, 0.5 + 0.5 * sin(uTime * 1.7));
+  col += acc * (exp(-abs(p.y - sy) / 1.5) * 0.7 + exp(-abs(p.y - sy) / 22.0) * 0.12);
+
+  float a = max(mask * 0.97, glow * 0.95);
+  vec3 rgb = (clamp(col, 0.0, 1.5) * mask * 0.97 + acc * glow * (1.0 - mask * 0.4)) / max(a, 0.001);
+  gl_FragColor = vec4(clamp(rgb, 0.0, 1.0), a);
+}`;
+
+// ---------------------------------------------------------------- layout (cover, keep video aspect)
+const box = $('box'), video = $('cam'), glc = $('gl'), ov = $('ov'), octx = ov.getContext('2d');
+let CW = 1, CH = 1, BL = 0, BT = 0, dpr = 1;
+let renderer, material;
+function layout() {
+  const W = innerWidth, H = innerHeight, va = (video.videoWidth || 1280) / (video.videoHeight || 720);
+  CW = Math.max(W, H * va); CH = CW / va; BL = (W - CW) / 2; BT = (H - CH) / 2;
+  Object.assign(box.style, { width: CW + 'px', height: CH + 'px', left: BL + 'px', top: BT + 'px' });
+  dpr = Math.min(devicePixelRatio || 1, 1.5);
+  ov.width = CW * dpr; ov.height = CH * dpr; octx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  if (renderer) { renderer.setPixelRatio(dpr); renderer.setSize(CW, CH, false); material.uniforms.uRes.value.set(CW, CH); }
+}
+addEventListener('resize', layout);
+
+// ---------------------------------------------------------------- audio
+let ac;
+function beep(f = 660, dur = .08, type = 'sine', vol = .1) {
+  try { ac ||= new AudioContext(); const o = ac.createOscillator(), g = ac.createGain(); o.type = type; o.frequency.value = f;
+    g.gain.setValueAtTime(vol, ac.currentTime); g.gain.exponentialRampToValueAtTime(.0001, ac.currentTime + dur);
+    o.connect(g).connect(ac.destination); o.start(); o.stop(ac.currentTime + dur); } catch {}
+}
+const whoosh = () => { [300, 500, 800, 1200].forEach((f, i) => setTimeout(() => beep(f, .07, 'sawtooth', .04), i * 35)); };
+const shutter = () => { beep(1800, .03, 'square', .12); setTimeout(() => beep(900, .06, 'square', .08), 40); };
+
+// ---------------------------------------------------------------- effect switching
+let cur = 0, prev = 0, mixStart = -1e9, titleAt = -1e9;
+const bar = $('bar');
+EFFECTS.forEach((e, i) => {
+  const b = document.createElement('button'); b.textContent = e.name; b.style.setProperty('--acc', css(e.acc));
+  b.onclick = () => setEffect(i); bar.appendChild(b);
+});
+const snapBtn = document.createElement('button'); snapBtn.className = 'snap'; snapBtn.textContent = '📸 PHOTO'; snapBtn.onclick = () => startCountdown(); bar.appendChild(snapBtn);
+function syncBar() { [...bar.children].forEach((b, i) => b.classList.toggle('on', i === cur)); }
+function setEffect(i) {
+  i = (i + EFFECTS.length) % EFFECTS.length; if (i === cur) return;
+  prev = cur; cur = i; mixStart = performance.now(); titleAt = mixStart; whoosh(); syncBar();
+}
+syncBar();
+addEventListener('keydown', e => {
+  if (e.key >= '1' && e.key <= '9') setEffect(+e.key - 1);
+  else if (e.key === '0') setEffect(9);
+  else if (e.key === ' ' || e.key === 'ArrowRight') { e.preventDefault(); setEffect(cur + 1); }
+  else if (e.key === 'ArrowLeft') setEffect(cur - 1);
+  else if (e.key.toLowerCase() === 's') startCountdown();
+  else if (e.key.toLowerCase() === 'h') document.body.classList.toggle('hideui');
+});
+
+// ---------------------------------------------------------------- hand reading (container px)
+const BONES = [[0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],[5,9],[9,10],[10,11],[11,12],[9,13],[13,14],[14,15],[15,16],[13,17],[17,18],[18,19],[19,20],[0,17]];
+const D = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+const mid = (a, b) => ({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
+function readHand(lm) {
+  const p = lm.map(l => ({ x: (1 - l.x) * CW, y: l.y * CH }));   // mirrored, like the video
+  const palm = D(p[0], p[9]);
+  const ext = [8, 12, 16, 20].map(t => D(p[t], p[0]) > D(p[t - 2], p[0]) * 1.12);
+  const thumbOut = D(p[4], p[17]) > D(p[3], p[17]) * 1.05 && D(p[4], p[5]) > palm * 0.45;
+  return {
+    p, palm,
+    pinch: D(p[4], p[8]) < palm * 0.38,
+    peace: ext[0] && ext[1] && !ext[2] && !ext[3],
+    thumbsUp: !ext.some(Boolean) && thumbOut && p[4].y < p[3].y && p[4].y < p[5].y - palm * 0.3,
+  };
+}
+
+// ---------------------------------------------------------------- window state
+let shape = 0, presence = 0;
+let Q = [{x:0,y:0},{x:0,y:0},{x:0,y:0},{x:0,y:0}], circ = { x: 0, y: 0, r: 0 };
+let peaceF = 0, peaceLock = false, thumbF = 0, countdownAt = 0, snapPending = false, flash = 0;
+const lerpP = (a, b, k) => ({ x: a.x + (b.x - a.x) * k, y: a.y + (b.y - a.y) * k });
+
+function updateWindow(hands) {
+  let target = 0;
+  if (hands.length >= 2) {
+    const [L, R] = hands.slice(0, 2).sort((a, b) => a.p[0].x - b.p[0].x);
+    let T;
+    if (L.pinch && R.pinch) {                       // scanner bar between the two pinches
+      const cl = mid(L.p[4], L.p[8]), cr = mid(R.p[4], R.p[8]), h = CH * 0.075;
+      T = [{ x: cl.x, y: cl.y - h }, { x: cr.x, y: cr.y - h }, { x: cr.x, y: cr.y + h }, { x: cl.x, y: cl.y + h }];
+      target = 3;
+    } else {                                        // portal: index tips on top, thumbs below
+      T = [L.p[8], R.p[8], R.p[4], L.p[4]];
+      target = 1;
+    }
+    Q = (shape === 1 || shape === 3) && presence > .2 ? Q.map((q, i) => lerpP(q, T[i], .5)) : T.map(t => ({ ...t }));
+  } else if (hands.length === 1) {                  // lens between thumb & index
+    const h = hands[0], c = mid(h.p[4], h.p[8]), r = Math.max(D(h.p[4], h.p[8]) / 2, 36);
+    circ = shape === 2 && presence > .2 ? { x: circ.x + (c.x - circ.x) * .5, y: circ.y + (c.y - circ.y) * .5, r: circ.r + (r - circ.r) * .5 } : { ...c, r };
+    target = 2;
+  }
+  if (target) shape = target;
+  presence += ((target ? 1 : 0) - presence) * (target ? .25 : .1);
+}
+
+function gestures(hands, now) {
+  const peace = hands.some(h => h.peace);
+  peaceF = peace ? peaceF + 1 : 0;
+  if (!peace) peaceLock = false;
+  if (peaceF >= 6 && !peaceLock) { peaceLock = true; setEffect(cur + 1); }
+  const thumb = hands.some(h => h.thumbsUp);
+  thumbF = thumb ? thumbF + 1 : 0;
+  if (thumbF === 15 && !countdownAt) startCountdown();
+}
+function startCountdown() { if (countdownAt) return; countdownAt = performance.now(); beep(880, .08); }
+
+// ---------------------------------------------------------------- overlay drawing
+let fps = 60, lastNow = 0;
+function drawOverlay(handsRaw, now) {
+  octx.clearRect(0, 0, CW, CH);
+  const e = EFFECTS[cur], acc = css(e.acc);
+
+  // hand skeletons (subtle)
+  octx.save();
+  octx.strokeStyle = 'rgba(255,255,255,.45)'; octx.fillStyle = 'rgba(255,255,255,.75)'; octx.lineWidth = 1; octx.shadowColor = '#fff'; octx.shadowBlur = 3;
+  for (const h of handsRaw) {
+    octx.beginPath(); for (const [i, j] of BONES) { octx.moveTo(h.p[i].x, h.p[i].y); octx.lineTo(h.p[j].x, h.p[j].y); } octx.stroke();
+    for (const q of h.p) { octx.beginPath(); octx.arc(q.x, q.y, 1.5, 0, 6.283); octx.fill(); }
+  }
+  octx.restore();
+
+  if (presence > .05) {
+    octx.save(); octx.globalAlpha = Math.min(1, presence * 1.2);
+    octx.fillStyle = acc; octx.strokeStyle = acc; octx.shadowColor = acc; octx.shadowBlur = 14;
+    let lx, ly, area;
+    if (shape === 2) {
+      for (let k = 0; k < 4; k++) {                 // rotating ticks around the lens
+        const a = now / 900 + k * Math.PI / 2, r1 = circ.r + 8, r2 = circ.r + 20;
+        octx.lineWidth = 3; octx.beginPath(); octx.moveTo(circ.x + Math.cos(a) * r1, circ.y + Math.sin(a) * r1); octx.lineTo(circ.x + Math.cos(a) * r2, circ.y + Math.sin(a) * r2); octx.stroke();
+      }
+      lx = circ.x - circ.r; ly = circ.y - circ.r - 30; area = Math.PI * circ.r * circ.r;
+    } else {
+      for (const q of Q) octx.fillRect(q.x - 5, q.y - 5, 10, 10);
+      lx = Math.min(...Q.map(q => q.x)); ly = Math.min(...Q.map(q => q.y)) - 30;
+      area = Math.abs(Q.reduce((s, q, i) => s + q.x * Q[(i + 1) % 4].y - Q[(i + 1) % 4].x * q.y, 0)) / 2;
+    }
+    octx.shadowBlur = 8; octx.font = "700 13px 'JetBrains Mono', monospace"; octx.fillText(`◉ ${e.name}`, lx, ly);
+    octx.font = "400 10.5px 'JetBrains Mono', monospace"; octx.globalAlpha *= .8;
+    octx.fillText(`${e.tag} · ${(area / 1000).toFixed(1)}k px² · ${fps|0} fps`, lx, ly + 14);
+    octx.restore();
+  } else if (!handsRaw.length) {
+    octx.save(); octx.font = "700 15px 'JetBrains Mono', monospace"; octx.textAlign = 'center'; octx.fillStyle = 'rgba(255,255,255,.7)';
+    octx.fillText('RAISE YOUR HANDS', CW / 2, -BT + innerHeight * .42); octx.restore();
+  }
+
+  // big title flash on switch
+  const ta = 1 - (now - titleAt) / 1300;
+  if (ta > 0) {
+    octx.save(); octx.globalAlpha = Math.min(1, ta * 2); octx.textAlign = 'center'; octx.fillStyle = acc; octx.shadowColor = acc; octx.shadowBlur = 25;
+    octx.font = `700 ${Math.round(48 + (1 - ta) * 10)}px 'Space Grotesk', sans-serif`;
+    octx.fillText(`◢ ${e.name} ◣`, CW / 2, -BT + 110); octx.restore();
+  }
+
+  // countdown
+  if (countdownAt) {
+    const left = 3 - (now - countdownAt) / 1000;
+    if (left <= 0) { countdownAt = 0; snapPending = true; }
+    else {
+      const n = Math.ceil(left), f = left - Math.floor(left);
+      if (drawOverlay.lastN !== n) { drawOverlay.lastN = n; beep(700 + (3 - n) * 150, .09); }
+      octx.save(); octx.textAlign = 'center'; octx.textBaseline = 'middle'; octx.globalAlpha = .4 + f * .6;
+      octx.fillStyle = '#fff'; octx.shadowColor = acc; octx.shadowBlur = 40;
+      octx.font = `700 ${Math.round(140 + (1 - f) * 60)}px 'Space Grotesk', sans-serif`;
+      octx.fillText(n, CW / 2, -BT + innerHeight / 2); octx.restore();
+    }
+  } else drawOverlay.lastN = 0;
+}
+
+// ---------------------------------------------------------------- snapshot (visible area: video + shader + overlay)
+function snapshot() {
+  const W = innerWidth, H = innerHeight, s = Math.min(devicePixelRatio || 1, 2);
+  const c = document.createElement('canvas'); c.width = W * s; c.height = H * s;
+  const x = c.getContext('2d'); x.scale(s, s);
+  x.save(); x.filter = 'brightness(.68) saturate(.85)'; x.translate(BL + CW, BT); x.scale(-1, 1); x.drawImage(video, 0, 0, CW, CH); x.restore();
+  x.drawImage(glc, BL, BT, CW, CH); x.drawImage(ov, BL, BT, CW, CH);
+  x.font = "700 13px 'JetBrains Mono', monospace"; x.fillStyle = 'rgba(255,255,255,.6)'; x.fillText(`REALITY LENS · ${EFFECTS[cur].name}`, 16, H - 16);
+  const url = c.toDataURL('image/png');
+  const a = document.createElement('a'); a.href = url; a.download = `reality-lens-${EFFECTS[cur].name.toLowerCase().replace(/\s/g, '-')}-${Date.now()}.png`; a.click();
+  const t = $('thumb'); t.src = url; t.classList.add('show'); clearTimeout(snapshot.t); snapshot.t = setTimeout(() => t.classList.remove('show'), 2600);
+  shutter(); flash = 1;
+}
+
+// ---------------------------------------------------------------- main loop
+let landmarker, lastVT = -1, raw = [], hands = [];
+const t0 = performance.now();
+function loop(now) {
+  requestAnimationFrame(loop);
+  const dt = now - lastNow; lastNow = now; if (dt > 0) fps += (1000 / dt - fps) * .05;
+  if (video.readyState >= 2 && video.currentTime !== lastVT) {
+    lastVT = video.currentTime;
+    raw = landmarker.detectForVideo(video, now).landmarks || [];
+    hands = raw.map(readHand);
+    updateWindow(hands); gestures(hands, now);
+  }
+
+  const u = material.uniforms;
+  u.uTime.value = (now - t0) / 1000;
+  u.uShape.value = shape === 2 ? 2 : 1;
+  [u.uQ0, u.uQ1, u.uQ2, u.uQ3].forEach((q, i) => q.value.set(Q[i].x, Q[i].y));
+  u.uCirc.value.set(circ.x, circ.y, circ.r);
+  u.uPresence.value = presence;
+  u.uPrev.value = prev; u.uCur.value = cur;
+  u.uMix.value = Math.min(1, (now - mixStart) / 750);
+  u.uAccPrev.value.fromArray(EFFECTS[prev].acc); u.uAccCur.value.fromArray(EFFECTS[cur].acc);
+  let cx, cy, minY, maxY, mr;
+  if (shape === 2) { cx = circ.x; cy = circ.y; minY = circ.y - circ.r; maxY = circ.y + circ.r; mr = circ.r * 1.5; u.uExt.value.set(circ.r, circ.r); }
+  else { cx = Q.reduce((s, q) => s + q.x, 0) / 4; cy = Q.reduce((s, q) => s + q.y, 0) / 4; minY = Math.min(...Q.map(q => q.y)); maxY = Math.max(...Q.map(q => q.y)); mr = Math.max(...Q.map(q => Math.hypot(q.x - cx, q.y - cy))) * 1.1;
+    const xs = Q.map(q => q.x); cx = (Math.min(...xs) + Math.max(...xs)) / 2; cy = (minY + maxY) / 2; u.uExt.value.set((Math.max(...xs) - Math.min(...xs)) / 2, (maxY - minY) / 2); }
+  u.uCenter.value.set(cx, cy); u.uBox.value.set(minY, maxY); u.uMaxR.value = Math.max(mr, 40);
+
+  renderer.render(scene, camera);
+  drawOverlay(hands, now);
+  if (snapPending) { snapPending = false; snapshot(); }
+  if (flash > 0) { octx.fillStyle = `rgba(255,255,255,${flash})`; octx.fillRect(0, 0, CW, CH); flash -= .08; }
+}
+
+let scene, camera;
+$('go').onclick = async () => {
+  const btn = $('go'); btn.disabled = true; btn.textContent = 'Loading AI models & camera…'; $('err').textContent = '';
+  try {
+    beep(1, .01, 'sine', .0001);
+    const stream = await navigator.mediaDevices.getUserMedia({ video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' }, audio: false });
+    video.srcObject = stream; await video.play();
+    const fs = await FilesetResolver.forVisionTasks(MP);
+    const opts = delegate => ({ baseOptions: { modelAssetPath: MODEL, delegate }, runningMode: 'VIDEO', numHands: 2 });
+    try { landmarker = await HandLandmarker.createFromOptions(fs, opts('GPU')); } catch { landmarker = await HandLandmarker.createFromOptions(fs, opts('CPU')); }
+
+    renderer = new THREE.WebGLRenderer({ canvas: glc, alpha: true, antialias: false, preserveDrawingBuffer: true });
+    renderer.setClearColor(0x000000, 0);
+    scene = new THREE.Scene(); camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+    const tex = new THREE.VideoTexture(video); tex.minFilter = THREE.LinearFilter; tex.magFilter = THREE.LinearFilter;
+    const at = document.createElement('canvas'); at.width = 320; at.height = 32;
+    const ax = at.getContext('2d'); ax.fillStyle = '#000'; ax.fillRect(0, 0, 320, 32);
+    ax.fillStyle = '#fff'; ax.font = 'bold 28px monospace'; ax.textAlign = 'center'; ax.textBaseline = 'middle';
+    [...' .:-=+*#%@'].forEach((ch, i) => ax.fillText(ch, i * 32 + 16, 17));
+    const asciiTex = new THREE.CanvasTexture(at); asciiTex.minFilter = THREE.LinearFilter;
+    material = new THREE.ShaderMaterial({
+      vertexShader: vert, fragmentShader: frag, transparent: true, depthTest: false,
+      uniforms: {
+        tDiffuse: { value: tex }, tAscii: { value: asciiTex }, uExt: { value: new THREE.Vector2(100, 100) }, uRes: { value: new THREE.Vector2(1, 1) }, uVid: { value: new THREE.Vector2(video.videoWidth, video.videoHeight) },
+        uTime: { value: 0 }, uShape: { value: 1 }, uQ0: { value: new THREE.Vector2() }, uQ1: { value: new THREE.Vector2() }, uQ2: { value: new THREE.Vector2() }, uQ3: { value: new THREE.Vector2() },
+        uCirc: { value: new THREE.Vector3() }, uPresence: { value: 0 }, uPrev: { value: 0 }, uCur: { value: 0 }, uMix: { value: 1 },
+        uAccPrev: { value: new THREE.Vector3() }, uAccCur: { value: new THREE.Vector3() }, uCenter: { value: new THREE.Vector2() }, uMaxR: { value: 100 }, uBox: { value: new THREE.Vector2() },
+      },
+    });
+    scene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), material));
+    layout();
+    $('start').remove();
+    requestAnimationFrame(loop);
+  } catch (e) {
+    console.error(e); btn.disabled = false; btn.textContent = 'Try again';
+    $('err').textContent = e.name === 'NotAllowedError' ? 'Camera access was blocked. Allow it from the address bar and try again.' : 'Couldn\'t start: ' + (e.message || e);
+  }
+};
+</script>
+</body>
+</html>
